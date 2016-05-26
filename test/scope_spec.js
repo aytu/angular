@@ -12,6 +12,20 @@ describe("Scope",function () {
     beforeEach(function () {
       scope=new Scope();
     });
+    it("executes $apply'ed function and starts the digest",function () {
+        scope.name="Jhon";
+        scope.count=0;
+        scope.$watch(
+          function(scope){return scope.name;},
+          function(newValue,oldValue,scope){
+            scope.count++;
+          }
+        );
+        scope.$digest();
+        expect(scope.count).toBe(1);
+        scope.$apply(function(){scope.name="someone";});
+        expect(scope.count).toBe(2);
+    })
     it("executes $eval'ed function and returns result", function() {
       scope.aValue = 42;
       var result = scope.$eval(function(scope) {
