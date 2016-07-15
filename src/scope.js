@@ -8,7 +8,9 @@ function Scope(){
   this.$$postDigestQueue = [];
   this.$$phase=null;
 }
-
+Scope.prototype.$new=function () {
+  return Object.create(this);
+};
 Scope.prototype.$$postDigest = function(fn) {
   this.$$postDigestQueue.push(fn);
 };
