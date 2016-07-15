@@ -7,9 +7,14 @@ function Scope(){
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
   this.$$phase=null;
+  this.$$children=[];
 }
 Scope.prototype.$new=function () {
-  return Object.create(this);
+  var child= Object.create(this);
+  this.$$children.push(child);
+  child.$$watchers=[];
+  child.$$children=[];
+  return child;
 };
 Scope.prototype.$$postDigest = function(fn) {
   this.$$postDigestQueue.push(fn);
