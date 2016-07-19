@@ -6,11 +6,22 @@ function Scope(){
   this.$$applyAsyncQueue=[];
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
+  this.$root=this;
   this.$$phase=null;
   this.$$children=[];
 }
-Scope.prototype.$new=function () {
-  var child= Object.create(this);
+Scope.prototype.$new=function (isolated) {
+  var child;
+  if(isolated){
+    child=new Scope();
+    child.$root=this.$root;
+    child.$$asyncQueue=this.$$asyncQueue;
+    child.$$postDigestQueue=this.$$postDigestQueue;
+    child.$$applyAsyncQueue = this.$$applyAsyncQueue;
+  }
+  else {
+     child= Object.create(this);
+  }
   this.$$children.push(child);
   child.$$watchers=[];
   child.$$children=[];
@@ -39,7 +50,7 @@ Scope.prototype.$$flushApplyAsync=function () {
       console.log(e);
     }
   }
-  this.$$applyAsyncId = null;
+  this.$root.$$applyAsyncId = null;
 };
 
 Scope.prototype.$applyAsync=function (expr) {
@@ -47,8 +58,8 @@ Scope.prototype.$applyAsync=function (expr) {
   self.$$applyAsyncQueue.push(function () {
     self.$eval(expr);
   });
-  if(self.$$applyAsyncId===null){
-    self.$$applyAsyncId=setTimeout(function () {
+  if(self.$root.$$applyAsyncId===null){
+    self.$root.$$applyAsyncId=setTimeout(function () {
       self.$apply(_.bind(self.$$flushApplyAsync, self));
     },0);
   }
@@ -76,27 +87,27 @@ Scope.prototype.$watch=function (watchFn,listenerFn,valueEq) {
     last:initWatchVal
   };
   this.$$watchers.unshift(watcher);
-  this.$$lastDirtyWatch=null;
+  this.$root.$$lastDirtyWatch=null;
   return function(){
     var index=self.$$watchers.indexOf(watcher);
     if(index>=0){
       self.$$watchers.splice(index,1);
-      self.$$lastDirtyWatch = null;
+      self.$root.$$lastDirtyWatch = null;
     }
   };
 };
 
 Scope.prototype.$eval = function(expr, locals) {
-   return expr(this, locals);
+  return expr(this, locals);
 };
 
 Scope.prototype.$apply=function (expr) {
   try{
     this.$beginPhase("$apply");
-    this.$eval(expr);
+    return this.$eval(expr);
   }finally{
     this.$clearPhase();
-    this.$digest();
+    this.$root.$digest();
   }
 };
 
@@ -105,7 +116,7 @@ Scope.prototype.$evalAsync=function (expr) {
   if(!self.$$phase&&!self.$$asyncQueue.length){
     setTimeout(function () {
       if(self.$$asyncQueue.length){
-        self.$digest();
+        self.$root.$digest();
       }
     },0);
   }
@@ -119,28 +130,43 @@ Scope.prototype.$$areEqual=function (newValue,oldValue,valueEq) {
     return newValue===oldValue || (typeof newValue==='number'&& typeof oldValue==='number'&& isNaN(newValue)&&isNaN(oldValue));
   }
 };
-
+Scope.prototype.$$everyScope = function(fn) {
+  if (fn(this)) {
+    return this.$$children.every(function(child) {
+      return child.$$everyScope(fn);
+    });
+  } else {
+    return false;
+  }
+};
 Scope.prototype.$$digestOnce=function () {
   'use strict';
+  var dirty;
+  var continueLoop = true;
   var self=this;
-  var newValue,oldValue,dirty;
-  _.forEachRight(this.$$watchers,function(watcher){
-    if(watcher){
-    try{
-      newValue=watcher.watchFn(self);
-      oldValue=watcher.last;
-      if(!self.$$areEqual(newValue,oldValue,watcher.valueEq)){
-        self.$$lastDirtyWatch=watcher;
-        watcher.last=(watcher.valueEq ? _.cloneDeep(newValue):newValue);
-        watcher.listenerFn(newValue,(oldValue===initWatchVal?newValue:oldValue),self);
-        dirty=true;
-      }else if(self.$$lastDirtyWatch===watcher){
-        return false;
+
+  this.$$everyScope(function (scope) {
+    var newValue,oldValue;
+    _.forEachRight(scope.$$watchers,function(watcher){
+      if(watcher){
+        try{
+          newValue=watcher.watchFn(scope);
+          oldValue=watcher.last;
+          if(!scope.$$areEqual(newValue,oldValue,watcher.valueEq)){
+            self.$root.$$lastDirtyWatch=watcher;
+            watcher.last=(watcher.valueEq ? _.cloneDeep(newValue):newValue);
+            watcher.listenerFn(newValue,(oldValue===initWatchVal?newValue:oldValue),scope);
+            dirty=true;
+          }else if(self.$root.$$lastDirtyWatch===watcher){
+            continueLoop=false;
+            return false;
+          }
+        }catch(e){
+          console.log(e);
+        }
       }
-    }catch(e){
-      console.log(e);
-    }
-   }
+    });
+    return continueLoop;
   });
   return dirty;
 };
@@ -148,10 +174,10 @@ Scope.prototype.$$digestOnce=function () {
 
 Scope.prototype.$digest=function () {
   var dirty; var TTL=10;
-  this.$$lastDirtyWatch=null;
+  this.$root.$$lastDirtyWatch=null;
   this.$beginPhase("$digest");
-  if (this.$$applyAsyncId) {
-      clearTimeout(this.$$applyAsyncId);
+  if (this.$root.$$applyAsyncId) {
+      clearTimeout(this.$root.$$applyAsyncId);
       this.$$flushApplyAsync();
   }
   do{
